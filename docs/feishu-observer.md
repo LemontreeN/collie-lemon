@@ -88,3 +88,29 @@ replies and subscribe to a thread; a prompt is not a capability boundary.
 The observer has no acceptance, execution or send interface. The next step,
 if approved, is an independently configured tool-free reviewer with a strict
 recommendation result and an explicit human action gate before any dispatch.
+
+### Optional recommendation-only reviewer
+
+`collie-feishu-pm` is a separate, one-shot program. Do not run it with real
+group data until your operator has explicitly authorized the provider to
+receive that data. It requires an approved, full HTTPS Chat Completions URL,
+a model name, `COLLIE_FEISHU_PM_TOKEN` in the environment, and
+`--approve-provider-data` on every invocation. This is not a ChatGPT
+subscription / Codex login integration. Socket/Herdr agents and the Collie
+Router are not called. For a synthetic test, use the bundled TLS fixture
+(`go test ./internal/feishuobserve -run TestPMDecisionEndToEnd`).
+
+The reviewer sends the **current group name and message text**, plus bounded
+context hints (whether a current thread exists, context classification and
+numbered candidates). It does not send source IDs, candidate thread IDs or
+load historical messages. No tools or callbacks are supplied. Only
+`ignore`, `continue` with a valid preconfigured candidate, or `suggest-new`
+may be recorded. No recommendation changes a thread, creates a session,
+dispatches a worker or sends any Feishu messages.
+
+One invocation atomically claims at most one private queue record. The
+terminal result or a `claimed` interruption remains in the same SQLite file;
+neither errors nor interrupted items are automatically retried. The
+command prints only status. To count outcomes locally, query
+`SELECT status, COUNT(*) FROM feishu_pm_decision GROUP BY status;`.
+There is no Collie UI integration or automatic runner.

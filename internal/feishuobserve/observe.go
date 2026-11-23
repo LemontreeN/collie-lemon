@@ -216,6 +216,9 @@ func Open(path string) (*sql.DB, error) {
  ); CREATE TABLE IF NOT EXISTS feishu_pm_review (
  message_id TEXT PRIMARY KEY, envelope TEXT NOT NULL, state TEXT NOT NULL CHECK(state = 'pending-review'),
  queued_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ ); CREATE TABLE IF NOT EXISTS feishu_pm_decision (
+ message_id TEXT PRIMARY KEY, status TEXT NOT NULL CHECK(status IN ('claimed','failed','ignore','continue','suggest-new')),
+ candidate_thread TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
  )`)
 	if err != nil {
 		db.Close()
