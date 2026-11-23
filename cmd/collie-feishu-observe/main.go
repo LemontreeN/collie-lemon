@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/lihuanyu0w0/collie/internal/feishuobserve"
 )
@@ -51,6 +52,7 @@ func run(ctx context.Context) error {
 
 	var input io.Reader = os.Stdin
 	var child *exec.Cmd
+	var activated time.Time
 	if *profile != "" {
 		// Explicit opt-in. Do not print raw CLI stderr or event bodies.
 		child = exec.CommandContext(ctx, "lark-cli", "event", "consume", "im.message.receive_v1", "--as", "bot", "--profile", *profile)
@@ -65,6 +67,7 @@ func run(ctx context.Context) error {
 		defer reader.Close()
 		defer writer.Close()
 		child.Stdin = reader // Avoid premature stdin EOF in a background service.
+		activated = time.Now()
 		if err := child.Start(); err != nil {
 			return errors.New("cannot start configured lark-cli consumer")
 		}
@@ -79,12 +82,21 @@ func run(ctx context.Context) error {
 			fmt.Fprintln(os.Stderr, "invalid-event")
 			continue
 		}
-		record, outcome := c.Project(event)
-		if outcome == "matched" {
-			outcome, err = feishuobserve.Stage(db, record)
-			if err != nil {
-				return errors.New("cannot stage event in local database")
+		var outcome string
+		if c.PMReview {
+			if child != nil && !feishuobserve.FreshPMEvent(event, activated, time.Now()) {
+				continue
 			}
+			outcome, err = c.QueuePMReview(db, event)
+		} else {
+			var record feishuobserve.Staged
+			record, outcome = c.Project(event)
+			if outcome == "matched" {
+				outcome, err = feishuobserve.Stage(db, record)
+			}
+		}
+		if err != nil {
+			return errors.New("cannot stage event in local database")
 		}
 		fmt.Fprintln(os.Stderr, outcome)
 	}

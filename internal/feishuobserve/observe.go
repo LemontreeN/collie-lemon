@@ -23,9 +23,10 @@ func typedID(prefix, id string) bool {
 var threadKey = regexp.MustCompile(`^[A-Za-z0-9_-]+:[A-Za-z0-9:_-]{1,190}$`)
 
 type Binding struct {
-	RootID  string `json:"root_id"`
-	TopicID string `json:"topic_id"`
-	Thread  string `json:"thread"`
+	PreviousThreads []string `json:"previous_threads,omitempty"`
+	RootID          string   `json:"root_id"`
+	TopicID         string   `json:"topic_id"`
+	Thread          string   `json:"thread"`
 }
 type Group struct {
 	Name             string    `json:"name"`
@@ -33,6 +34,7 @@ type Group struct {
 	Bindings         []Binding `json:"bindings"`
 }
 type Config struct {
+	PMReview  bool             `json:"pm_review,omitempty"`
 	BotOpenID string           `json:"bot_open_id"`
 	Groups    map[string]Group `json:"groups"`
 }
@@ -60,6 +62,16 @@ func (c Config) Validate() error {
 				topics[b.TopicID] = true
 			}
 			destinations[b.Thread] = true
+			if len(b.PreviousThreads) > 8 {
+				return errors.New("too many previous thread references")
+			}
+			seen := map[string]bool{b.Thread: true}
+			for _, prev := range b.PreviousThreads {
+				if !threadKey.MatchString(prev) || seen[prev] {
+					return errors.New("invalid previous thread reference")
+				}
+				seen[prev] = true
+			}
 		}
 	}
 	return nil
@@ -91,7 +103,7 @@ type Staged struct {
 	Thread    string `json:"collie_thread"`
 }
 
-func (c Config) Project(e Event) (Staged, string) {
+func (c Config) screen(e Event) (Staged, string) {
 	if e.Type != "im.message.receive_v1" {
 		return Staged{}, "wrong-event-type"
 	}
@@ -132,6 +144,16 @@ func (c Config) Project(e Event) (Staged, string) {
 	if len(e.Content) > 16000 {
 		return Staged{}, "oversized-content"
 	}
+	return Staged{Event: e, GroupName: g.Name}, "eligible"
+}
+
+func (c Config) Project(e Event) (Staged, string) {
+	screened, why := c.screen(e)
+	if why != "eligible" {
+		return Staged{}, why
+	}
+	e = screened.Event
+	g := c.Groups[e.ChatID]
 	root := e.RootID
 	if root == "" && e.ParentID == "" {
 		root = e.MessageID
@@ -191,6 +213,9 @@ func Open(path string) (*sql.DB, error) {
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS feishu_observer (
  message_id TEXT PRIMARY KEY, thread TEXT NOT NULL, payload TEXT NOT NULL, staged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ ); CREATE TABLE IF NOT EXISTS feishu_pm_review (
+ message_id TEXT PRIMARY KEY, envelope TEXT NOT NULL, state TEXT NOT NULL CHECK(state = 'pending-review'),
+ queued_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
  )`)
 	if err != nil {
 		db.Close()

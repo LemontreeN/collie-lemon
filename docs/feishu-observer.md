@@ -61,3 +61,30 @@ can split event delivery with other consumers; do not point a second live
 observer at an active production bot. This adapter does not install, configure,
 start services, or log in for you. If future integration is approved it must
 add a separate authorization/transfer step; staging alone never wakes Collie.
+
+## Optional PM-first intake (preview only)
+
+Set `"pm_review": true` in the observer config to queue **all** eligible
+human messages allowed by that group’s listening mode for project-manager review, including messages with an
+existing binding. A match no longer sends a message anywhere or takes the
+regular staging path. The private local `feishu_pm_review` table contains a
+single `pending-review` row per original message ID. `previous_threads` is
+an optional list on a binding (maximum 8) for operator-provided conversation
+references. The envelope keeps the group ID/name, source topic/root/parent,
+sender, and message as explicitly **untrusted** data; it attaches known
+current/previous thread references, not cross-group transcript bodies.
+Unknown or conflicting references produce a reason instead of a guessed
+target. An unmatched message is still queued for review where it passes the
+group, human and text checks. By default a group uses mentions mode: only an
+actual bot @ passes, including for already mapped threads. Setting
+`"allow_unmentioned": true` on one allowlisted group opts just that group into
+listen-all mode, where the provider must still deliver unmentioned events.
+The live PM intake does not backfill: it accepts only messages whose original
+creation time is at or after process activation (use a synchronized host clock).
+
+This first slice does **not** run the live Collie PM/Router or a model.
+The existing Router's authenticated capabilities can spawn workers, send
+replies and subscribe to a thread; a prompt is not a capability boundary.
+The observer has no acceptance, execution or send interface. The next step,
+if approved, is an independently configured tool-free reviewer with a strict
+recommendation result and an explicit human action gate before any dispatch.
